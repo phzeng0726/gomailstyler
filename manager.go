@@ -73,6 +73,14 @@ func WithSMTP(server, port, sender string) ManagerOption {
 	}
 }
 
+// WithSMTPPassword sets the SMTP password for authentication (optional)
+// If not provided, the mail will be sent without authentication
+func WithSMTPPassword(password string) ManagerOption {
+	return func(c *ManagerConfig) {
+		c.smtpPassword = &password
+	}
+}
+
 // WithTemplatePath sets the root path for template files (optional)
 // Required only if using file-based rendering methods
 func WithTemplatePath(path string) ManagerOption {

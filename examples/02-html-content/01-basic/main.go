@@ -12,9 +12,15 @@ func main() {
 	cfg := utils.LoadConfig()
 
 	// Initialize manager (no template path needed for HTML content)
-	manager, err := mailstyler.NewManagerWithOptions(
+	// Configure SMTP password if provided
+	opts := []mailstyler.ManagerOption{
 		mailstyler.WithSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPSender),
-	)
+	}
+	if cfg.SMTPPassword != "" {
+		opts = append(opts, mailstyler.WithSMTPPassword(cfg.SMTPPassword))
+	}
+
+	manager, err := mailstyler.NewManagerWithOptions(opts...)
 	if err != nil {
 		log.Fatalf("Failed to create manager: %v", err)
 	}

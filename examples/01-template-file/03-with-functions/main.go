@@ -14,19 +14,22 @@ func main() {
 	cfg := utils.LoadConfig()
 
 	// Initialize manager
-	manager, err := mailstyler.NewManagerWithOptions(
+	// Configure SMTP password if provided
+	opts := []mailstyler.ManagerOption{
 		mailstyler.WithSMTP(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPSender),
 		mailstyler.WithTemplatePath("../../assets/templates"),
-	)
+	}
+	if cfg.SMTPPassword != "" {
+		opts = append(opts, mailstyler.WithSMTPPassword(cfg.SMTPPassword))
+	}
+
+	manager, err := mailstyler.NewManagerWithOptions(opts...)
 	if err != nil {
 		log.Fatalf("Failed to create manager: %v", err)
 	}
 
 	// Define custom template functions
 	customFuncs := template.FuncMap{
-		"bold": func(s string) string {
-			return "<strong>" + s + "</strong>"
-		},
 		"repeat": func(s string, count int) string {
 			return strings.Repeat(s, count)
 		},
