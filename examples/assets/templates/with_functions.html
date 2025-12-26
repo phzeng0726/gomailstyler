@@ -36,14 +36,11 @@
   </head>
   <body>
     <div class="container">
-      <h1>Welcome, {{ bold .Name }}!</h1>
-      <p>
-        Thank you for joining us. We're excited to have you on board!
-      </p>
+      <h1>Welcome, {{ .Name }}!</h1>
+      <p>Thank you for joining us. We're excited to have you on board!</p>
 
       <div class="highlight">
         <p>Custom Functions Demo:</p>
-        <p>Your name in bold: {{ bold .Name }}</p>
         <p>Repeated greeting: {{ repeat "Hello! " 3 }}</p>
         <p>Uppercase name: {{ toUpper .Name }}</p>
       </div>

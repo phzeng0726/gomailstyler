@@ -108,10 +108,11 @@ gomailstyler/
 
 ### SMTP Behavior
 
-- Uses plain SMTP with no authentication (`smtp.SendMail(addr, nil, ...)`)
-- Suitable for authenticated SMTP relays or local mail servers
+- Supports optional SMTP authentication via `WithSMTPPassword` option
+- If password is provided, uses SMTP PLAIN authentication (`smtp.PlainAuth`)
+- If no password, sends mail without authentication (suitable for local relays)
 - `smtpSender` must match the authenticated user on most SMTP servers
-- Port 587 is typical for SMTP submission
+- Port 587 is typical for SMTP submission with STARTTLS
 
 ### Environment Configuration
 
@@ -120,4 +121,5 @@ The `examples/` directory expects a `.env` file with:
 - `SMTP_HOST`: SMTP server hostname
 - `SMTP_PORT`: SMTP port (typically "587")
 - `SMTP_SENDER`: From address
+- `SMTP_PASSWORD`: SMTP password (optional, for authentication)
 - `MAIL_RECEIVER`: Test recipient address

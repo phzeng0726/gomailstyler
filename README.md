@@ -40,8 +40,10 @@ import (
 
 func main() {
 	// Initialize manager with options pattern
+	// Configure SMTP password if needed for authentication
 	manager, err := mailstyler.NewManagerWithOptions(
 		mailstyler.WithSMTP("smtp.example.com", "587", "you@example.com"),
+		mailstyler.WithSMTPPassword("your-password"), // Optional: for SMTP authentication
 		mailstyler.WithTemplatePath("./templates"),
 		mailstyler.WithCSSPath("./templates/css"),
 	)
@@ -190,47 +192,15 @@ type InlineImage struct {
 #### `NewManagerWithOptions` (Recommended)
 
 ```go
-<<<<<<< HEAD
-func NewManager(
-	smtpHost, smtpPort, smtpSender string,
-	smtpPassword *string,
-	templatePath, cssPath string,
-) (*Manager, error)
-=======
 func NewManagerWithOptions(opts ...ManagerOption) (*Manager, error)
->>>>>>> feat/dev
 ```
 
 Creates a new mail manager using the function options pattern.
 
-<<<<<<< HEAD
-
-- `smtpHost`: SMTP server host address (e.g., `smtp.example.com`).
-
-  - This specifies the address of the SMTP server used for sending emails.
-
-- `smtpPort`: SMTP server port (e.g., `587`).
-
-  - This specifies the port number used to connect to the SMTP server. Typically, `587` is used for secure email transmission with STARTTLS, and `465` is for SSL/TLS.
-
-- `smtpSender`: Sender's email address.
-
-  - The email address that will be used as the "From" address when sending emails.
-
-- `smtpPassword`: Sender's SMTP password (or application-specific password if applicable).
-
-  - This is the password (or application-specific password for Gmail and similar services) required to authenticate with the SMTP server.
-
-- `templatePath`: Root directory of your template files.
-
-  - The file system path where email templates are stored. These templates will be used to render email content dynamically.
-
-- `cssPath`: Root directory of your CSS files.
-
-  - # The file system path where CSS files are stored. These CSS files will be used to style email templates when sending HTML emails.
-    **Available options:**
+**Available options:**
 
 - `WithSMTP(server, port, sender string)` - **Required** - SMTP server configuration
+- `WithSMTPPassword(password string)` - **Optional** - SMTP password for authentication
 - `WithTemplatePath(path string)` - Template directory (required for file-based rendering)
 - `WithCSSPath(path string)` - CSS directory (required for CSS inlining)
 
@@ -239,12 +209,11 @@ Creates a new mail manager using the function options pattern.
 ```go
 manager, err := mailstyler.NewManagerWithOptions(
 	mailstyler.WithSMTP("smtp.example.com", "587", "sender@example.com"),
+	mailstyler.WithSMTPPassword("your-password"),    // Optional: for SMTP auth
 	mailstyler.WithTemplatePath("./templates"),      // Optional
 	mailstyler.WithCSSPath("./templates/css"),       // Optional
 )
 ```
-
-> > > > > > > feat/dev
 
 ---
 
@@ -476,6 +445,7 @@ go run main.go
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SENDER=your-email@example.com
+SMTP_PASSWORD=your-smtp-password    # Optional: for SMTP authentication
 MAIL_RECEIVER=recipient@example.com
 ```
 

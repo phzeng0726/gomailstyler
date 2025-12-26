@@ -13,6 +13,7 @@ type Config struct {
 	SMTPHost     string
 	SMTPPort     string
 	SMTPSender   string
+	SMTPPassword string
 	MailReceiver string
 }
 
@@ -43,6 +44,7 @@ func LoadConfig() *Config {
 			"SMTP_HOST=your-smtp-server\n" +
 			"SMTP_PORT=587\n" +
 			"SMTP_SENDER=your-email@example.com\n" +
+			"SMTP_PASSWORD=your-smtp-password (optional)\n" +
 			"MAIL_RECEIVER=recipient@example.com")
 	}
 
@@ -50,6 +52,7 @@ func LoadConfig() *Config {
 		SMTPHost:     os.Getenv("SMTP_HOST"),
 		SMTPPort:     os.Getenv("SMTP_PORT"),
 		SMTPSender:   os.Getenv("SMTP_SENDER"),
+		SMTPPassword: os.Getenv("SMTP_PASSWORD"),
 		MailReceiver: os.Getenv("MAIL_RECEIVER"),
 	}
 }
