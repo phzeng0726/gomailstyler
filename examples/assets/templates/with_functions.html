@@ -3,9 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Welcome With Func Email</title>
+    <title>Welcome With Custom Functions</title>
     <style>
-      /* Inline CSS for RenderTemplate */
       body {
         font-family: Arial, sans-serif;
         background-color: #f4f4f4;
@@ -27,18 +26,28 @@
         color: #555555;
         line-height: 1.6;
       }
+      .highlight {
+        background-color: #ffffcc;
+        padding: 10px;
+        border-left: 4px solid #ffcc00;
+        margin: 15px 0;
+      }
     </style>
   </head>
   <body>
     <div class="container">
-      <h1>Welcome, {{.Name}}!</h1>
+      <h1>Welcome, {{ bold .Name }}!</h1>
       <p>
-        Thank you for joining us. You are {{.Age}} years old, and we are excited
-        to have you on board!
+        Thank you for joining us. We're excited to have you on board!
       </p>
-      {{if .Name}}
-      <p>Your name in uppercase: {{toUpper .Name}}</p>
-      {{end}}
+
+      <div class="highlight">
+        <p>Custom Functions Demo:</p>
+        <p>Your name in bold: {{ bold .Name }}</p>
+        <p>Repeated greeting: {{ repeat "Hello! " 3 }}</p>
+        <p>Uppercase name: {{ toUpper .Name }}</p>
+      </div>
+
       <p>Best regards,<br />The Team</p>
     </div>
   </body>
