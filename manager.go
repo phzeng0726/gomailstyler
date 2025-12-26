@@ -16,10 +16,16 @@ import (
 
 type MailManager interface {
 	SendMail(mm MailMessage) error
+
+	// File-based rendering
 	RenderTemplate(tmplFile string, data any) (string, error)
 	RenderTemplateWithFuncs(tmplFile string, data any, customFuncs ...template.FuncMap) (string, error)
 	RenderTemplateWithCSS(tmplFile, cssFile string, data any) (string, error)
 	RenderTemplateWithFuncsAndCSS(tmplFile, cssFile string, data any, customFuncs ...template.FuncMap) (string, error)
+
+	// Content-based rendering
+	RenderHTMLContent(htmlContent string, data any) (string, error)
+	RenderHTMLContentWithFuncs(htmlContent string, data any, customFuncs ...template.FuncMap) (string, error)
 }
 
 type Manager struct {
@@ -30,31 +36,94 @@ type Manager struct {
 	cssToolSvc service.CSSTools
 }
 
-func NewManager(smtpServer, smtpPort, smtpSender, templatePath, cssPath string) (*Manager, error) {
-	if smtpServer == "" {
-		return nil, errors.New("empty smtpServer")
+// ManagerConfig holds configuration for the Manager
+type ManagerConfig struct {
+	smtpServer   string
+	smtpPort     string
+	smtpSender   string
+	templatePath string
+	cssPath      string
+}
+
+// validate checks if required fields are set
+func (c *ManagerConfig) validate() error {
+	if c.smtpServer == "" {
+		return errors.New("empty smtpServer")
+	}
+	if c.smtpPort == "" {
+		return errors.New("empty smtpPort")
+	}
+	if c.smtpSender == "" {
+		return errors.New("empty smtpSender")
+	}
+	return nil
+}
+
+// ManagerOption is a functional option for configuring Manager
+type ManagerOption func(*ManagerConfig)
+
+// WithSMTP configures SMTP settings (required)
+func WithSMTP(server, port, sender string) ManagerOption {
+	return func(c *ManagerConfig) {
+		c.smtpServer = server
+		c.smtpPort = port
+		c.smtpSender = sender
+	}
+}
+
+// WithTemplatePath sets the root path for template files (optional)
+// Required only if using file-based rendering methods
+func WithTemplatePath(path string) ManagerOption {
+	return func(c *ManagerConfig) {
+		c.templatePath = path
+	}
+}
+
+// WithCSSPath sets the root path for CSS files (optional)
+// Required only if using CSS-based rendering methods
+func WithCSSPath(path string) ManagerOption {
+	return func(c *ManagerConfig) {
+		c.cssPath = path
+	}
+}
+
+// NewManagerWithOptions creates a Manager using functional options pattern
+func NewManagerWithOptions(opts ...ManagerOption) (*Manager, error) {
+	cfg := &ManagerConfig{}
+
+	// Apply all options
+	for _, opt := range opts {
+		opt(cfg)
 	}
 
-	if smtpPort == "" {
-		return nil, errors.New("empty smtpPort")
+	// Validate required fields
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("invalid manager config: %w", err)
 	}
 
-	if smtpSender == "" {
-		return nil, errors.New("empty smtpSender")
-	}
-
+	// Create services
 	svc := service.NewServices(service.Deps{
-		TmplPath: templatePath, // The root path of the template folder
-		CSSPath:  cssPath,      // The root path of the css folder
+		TmplPath: cfg.templatePath,
+		CSSPath:  cfg.cssPath,
 	})
 
 	return &Manager{
-		smtpServer: smtpServer,
-		smtpPort:   smtpPort,
-		smtpSender: smtpSender,
+		smtpServer: cfg.smtpServer,
+		smtpPort:   cfg.smtpPort,
+		smtpSender: cfg.smtpSender,
 		tmplSvc:    svc.Templates,
 		cssToolSvc: svc.CSSTools,
 	}, nil
+}
+
+// NewManager creates a Manager with SMTP and template configuration.
+// Deprecated: Use NewManagerWithOptions for more flexible configuration.
+func NewManager(smtpServer, smtpPort, smtpSender, templatePath, cssPath string) (*Manager, error) {
+	return NewManagerWithOptions(
+		WithSMTP(smtpServer, smtpPort, smtpSender),
+		WithTemplatePath(templatePath),
+		WithCSSPath(cssPath),
+	)
 }
 
 func (m *Manager) writeHTMLAttachment(
@@ -165,4 +234,12 @@ func (m *Manager) RenderTemplateWithCSS(tmplFile, cssFile string, data any) (str
 func (m *Manager) RenderTemplateWithFuncsAndCSS(tmplFile, cssFile string, data any, customFuncs ...template.FuncMap) (string, error) {
 	return m.cssToolSvc.RenderTemplateWithFuncsAndCSS(tmplFile, cssFile, data, customFuncs)
 
+}
+
+func (m *Manager) RenderHTMLContent(content string, data any) (string, error) {
+	return m.tmplSvc.RenderHTMLContent(content, data)
+}
+
+func (m *Manager) RenderHTMLContentWithFuncs(tmplFile string, data any, customFuncs ...template.FuncMap) (string, error) {
+	return m.tmplSvc.RenderHTMLContentWithFuncs(tmplFile, data, customFuncs)
 }

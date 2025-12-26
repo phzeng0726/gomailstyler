@@ -26,7 +26,7 @@ type Config struct {
 
 // loadConfig loads environment variables into a Config struct
 func loadConfig() *Config {
-	err := godotenv.Load()
+	err := godotenv.Load("../.env")
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
@@ -36,8 +36,8 @@ func loadConfig() *Config {
 		SMTPPort:     os.Getenv("SMTP_PORT"),     // e.g., "587"
 		SMTPSender:   os.Getenv("SMTP_SENDER"),   // e.g., "you@example.com"
 		MailReceiver: os.Getenv("MAIL_RECEIVER"), // e.g., "recipient@example.com"
-		TemplatePath: "./assets/templates",       // Root folder for templates
-		CSSPath:      "./assets/templates/css",   // Root folder for CSS
+		TemplatePath: "../assets/templates",      // Root folder for templates
+		CSSPath:      "../assets/templates/css",  // Root folder for CSS
 	}
 }
 
@@ -136,7 +136,7 @@ func sendCSSAndAttachmentsMail(manager *mailstyler.Manager, receiver string) {
 		log.Fatalf("failed to render template with CSS: %v", err)
 	}
 
-	imageData, err := fileToBytes("./assets/images/my_doggy.jpg")
+	imageData, err := fileToBytes("../assets/images/my_doggy.jpg")
 	if err != nil {
 		log.Fatalf("failed to load image: %v", err)
 	}
@@ -187,8 +187,8 @@ func init() {
 
 func main() {
 	sendBasicMail(manager, cfg.MailReceiver)
-	sendFuncsMail(manager, cfg.MailReceiver)
-	sendCSSMail(manager, cfg.MailReceiver)
-	sendFuncsAndCSSMail(manager, cfg.MailReceiver)
-	sendCSSAndAttachmentsMail(manager, cfg.MailReceiver)
+	// sendFuncsMail(manager, cfg.MailReceiver)
+	// sendCSSMail(manager, cfg.MailReceiver)
+	// sendFuncsAndCSSMail(manager, cfg.MailReceiver)
+	// sendCSSAndAttachmentsMail(manager, cfg.MailReceiver)
 }
