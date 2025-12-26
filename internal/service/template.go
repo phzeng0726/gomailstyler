@@ -114,3 +114,54 @@ func (s *TemplatesService) RenderTemplateWithFuncs(templateFile string, data any
 
 	return buf.String(), nil
 }
+
+func (s *TemplatesService) RenderHTMLContent(htmlContent string, data any) (string, error) {
+	startTime := time.Now()
+
+	// Parse template from string content (no file I/O)
+	tmpl, err := template.New("content").Parse(htmlContent)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", err
+	}
+
+	executionTime := time.Since(startTime)
+	log.Printf("RenderHTMLContent completed in %v", executionTime)
+
+	return buf.String(), nil
+}
+
+func (s *TemplatesService) RenderHTMLContentWithFuncs(htmlContent string, data any, customFuncs []template.FuncMap) (string, error) {
+	startTime := time.Now()
+
+	// Generate default functions
+	funcs := s.generateDefaultFuncs()
+
+	// Merge custom functions (override defaults if collision)
+	if len(customFuncs) > 0 {
+		for k, v := range customFuncs[0] {
+			funcs[k] = v
+		}
+	}
+
+	// Create template with functions and parse content
+	tmpl := template.New("content").Funcs(funcs)
+	tmpl, err := tmpl.Parse(htmlContent)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", err
+	}
+
+	executionTime := time.Since(startTime)
+	log.Printf("RenderHTMLContentWithFuncs completed in %v", executionTime)
+
+	return buf.String(), nil
+}

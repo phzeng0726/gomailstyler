@@ -3,8 +3,13 @@ package service
 import "html/template"
 
 type Templates interface {
+	// File-based rendering
 	RenderTemplate(tmplFile string, data any) (string, error)
 	RenderTemplateWithFuncs(tmplFile string, data any, customFuncs []template.FuncMap) (string, error)
+
+	// Content-based rendering
+	RenderHTMLContent(htmlContent string, data any) (string, error)
+	RenderHTMLContentWithFuncs(htmlContent string, data any, customFuncs []template.FuncMap) (string, error)
 }
 
 type CSSTools interface {
