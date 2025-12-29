@@ -20,7 +20,7 @@ func main() {
 		opts = append(opts, mailstyler.WithSMTPPassword(cfg.SMTPPassword))
 	}
 
-	manager, err := mailstyler.NewManagerWithOptions(opts...)
+	manager, err := mailstyler.NewManager(opts...)
 	if err != nil {
 		log.Fatalf("Failed to create manager: %v", err)
 	}

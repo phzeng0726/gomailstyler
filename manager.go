@@ -97,8 +97,8 @@ func WithCSSPath(path string) ManagerOption {
 	}
 }
 
-// NewManagerWithOptions creates a Manager using functional options pattern
-func NewManagerWithOptions(opts ...ManagerOption) (*Manager, error) {
+// NewManager creates a Manager using functional options pattern
+func NewManager(opts ...ManagerOption) (*Manager, error) {
 	cfg := &ManagerConfig{}
 
 	// Apply all options
@@ -125,16 +125,6 @@ func NewManagerWithOptions(opts ...ManagerOption) (*Manager, error) {
 		tmplSvc:      svc.Templates,
 		cssToolSvc:   svc.CSSTools,
 	}, nil
-}
-
-// NewManager creates a Manager with SMTP and template configuration.
-// Deprecated: Use NewManagerWithOptions for more flexible configuration.
-func NewManager(smtpHost, smtpPort, smtpSender, templatePath, cssPath string) (*Manager, error) {
-	return NewManagerWithOptions(
-		WithSMTP(smtpHost, smtpPort, smtpSender),
-		WithTemplatePath(templatePath),
-		WithCSSPath(cssPath),
-	)
 }
 
 func (m *Manager) writeHTMLAttachment(

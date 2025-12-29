@@ -41,7 +41,7 @@ import (
 func main() {
 	// Initialize manager with options pattern
 	// Configure SMTP password if needed for authentication
-	manager, err := mailstyler.NewManagerWithOptions(
+	manager, err := mailstyler.NewManager(
 		mailstyler.WithSMTP("smtp.example.com", "587", "you@example.com"),
 		mailstyler.WithSMTPPassword("your-password"), // Optional: for SMTP authentication
 		mailstyler.WithTemplatePath("./templates"), // Optional
@@ -86,7 +86,7 @@ import (
 
 func main() {
 	// Initialize manager (no template path needed for content mode)
-	manager, err := mailstyler.NewManagerWithOptions(
+	manager, err := mailstyler.NewManager(
 		mailstyler.WithSMTP("smtp.example.com", "587", "you@example.com"),
 	)
 	if err != nil {
@@ -200,7 +200,7 @@ import (
 
 func main() {
 	// Initialize manager
-	manager, err := mailstyler.NewManagerWithOptions(
+	manager, err := mailstyler.NewManager(
 		mailstyler.WithSMTP("smtp.example.com", "587", "you@example.com"),
 		mailstyler.WithSMTPPassword("your-password"),
 	)
@@ -316,10 +316,10 @@ func main() {
 
 ### Initialization
 
-#### `NewManagerWithOptions` (Recommended)
+#### `NewManager`
 
 ```go
-func NewManagerWithOptions(opts ...ManagerOption) (*Manager, error)
+func NewManager(opts ...ManagerOption) (*Manager, error)
 ```
 
 Creates a new mail manager using the function options pattern.
@@ -334,7 +334,7 @@ Creates a new mail manager using the function options pattern.
 **Example:**
 
 ```go
-manager, err := mailstyler.NewManagerWithOptions(
+manager, err := mailstyler.NewManager(
 	mailstyler.WithSMTP("smtp.example.com", "587", "sender@example.com"),
 	mailstyler.WithSMTPPassword("your-password"),    // Optional: for SMTP auth
 	mailstyler.WithTemplatePath("./templates"),      // Optional
@@ -594,32 +594,6 @@ Uses [go-premailer](https://github.com/vanng822/go-premailer) with optimized set
 
 - `KeepBangImportant: true` - Preserves `!important` declarations
 - `RemoveClasses: true` - Removes class attributes after inlining (smaller HTML size)
-
----
-
-## 🔧 Backward Compatibility
-
-### Legacy Initialization (Deprecated but Supported)
-
-```go
-func NewManager(SMTPHost, smtpPort, smtpSender, templatePath, cssPath string) (*Manager, error)
-```
-
-**Note:** This method is deprecated in favor of `NewManagerWithOptions` but remains available for backward compatibility.
-
-**Migration example:**
-
-```go
-// Old way (still works)
-manager, err := mailstyler.NewManager("smtp.example.com", "587", "sender@example.com", "./templates", "./css")
-
-// New way (recommended)
-manager, err := mailstyler.NewManagerWithOptions(
-	mailstyler.WithSMTP("smtp.example.com", "587", "sender@example.com"),
-	mailstyler.WithTemplatePath("./templates"),
-	mailstyler.WithCSSPath("./css"),
-)
-```
 
 ---
 

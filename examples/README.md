@@ -74,7 +74,7 @@ These examples demonstrate using external template and CSS files.
 
 - Basic template rendering from a file
 - Passing data to templates
-- Using `NewManagerWithOptions()` with template path
+- Using `NewManager()` with template path
 
 **Files used:**
 
