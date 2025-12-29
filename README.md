@@ -44,8 +44,8 @@ func main() {
 	manager, err := mailstyler.NewManagerWithOptions(
 		mailstyler.WithSMTP("smtp.example.com", "587", "you@example.com"),
 		mailstyler.WithSMTPPassword("your-password"), // Optional: for SMTP authentication
-		mailstyler.WithTemplatePath("./templates"),
-		mailstyler.WithCSSPath("./templates/css"),
+		mailstyler.WithTemplatePath("./templates"), // Optional
+		mailstyler.WithCSSPath("./templates/css"), // Optional
 	)
 	if err != nil {
 		log.Fatalf("failed to create manager: %v", err)
@@ -73,7 +73,7 @@ func main() {
 }
 ```
 
-### Example 2: Using HTML Content Strings (New in v0.2.0)
+### Example 2: Using HTML Content Strings (New in v1.0.0)
 
 ```go
 package main
@@ -182,6 +182,133 @@ type InlineImage struct {
 ```html
 <img src="cid:logo" alt="Company Logo" />
 ```
+
+---
+
+## 📎 Working with Attachments & Inline Images
+
+### Example: Sending Email with Attachments and Inline Images
+
+```go
+package main
+
+import (
+	"log"
+	"os"
+	mailstyler "github.com/phzeng0726/gomailstyler"
+)
+
+func main() {
+	// Initialize manager
+	manager, err := mailstyler.NewManagerWithOptions(
+		mailstyler.WithSMTP("smtp.example.com", "587", "you@example.com"),
+		mailstyler.WithSMTPPassword("your-password"),
+	)
+	if err != nil {
+		log.Fatalf("failed to create manager: %v", err)
+	}
+
+	// Read image file for inline embedding
+	logoData, err := os.ReadFile("./assets/logo.png")
+	if err != nil {
+		log.Fatalf("failed to read logo: %v", err)
+	}
+
+	// Read PDF file for attachment
+	pdfData, err := os.ReadFile("./documents/report.pdf")
+	if err != nil {
+		log.Fatalf("failed to read PDF: %v", err)
+	}
+
+	// Create HTML content with inline image reference
+	htmlContent := `
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>Monthly Report</title>
+</head>
+<body>
+	<img src="cid:company-logo" alt="Company Logo" width="200" />
+	<h1>Monthly Report</h1>
+	<p>Dear {{.Name}},</p>
+	<p>Please find the attached monthly report for your review.</p>
+	<img src="cid:my-doggy-img" alt="My Dog" style="border-radius: 8px;" />
+	<p>Best regards,<br>The Team</p>
+</body>
+</html>
+	`
+
+	// Render HTML content
+	body, err := manager.RenderHTMLContent(htmlContent, map[string]any{
+		"Name": "John Doe",
+	})
+	if err != nil {
+		log.Fatalf("failed to render content: %v", err)
+	}
+
+	// Read another image for inline use
+	doggyData, err := os.ReadFile("./assets/my_doggy.jpg")
+	if err != nil {
+		log.Fatalf("failed to read doggy image: %v", err)
+	}
+
+	// Send email with attachments and inline images
+	err = manager.SendMail(mailstyler.MailMessage{
+		Subject: "Monthly Report - January 2024",
+		Message: body,
+		To:      []string{"recipient@example.com"},
+		Cc:      []string{"manager@example.com"},
+		// Inline images (embedded in HTML via cid:)
+		InlineImages: []mailstyler.InlineImage{
+			{
+				CID:      "company-logo",      // Reference in HTML: <img src="cid:company-logo">
+				FileName: "logo.png",
+				Data:     logoData,
+			},
+			{
+				CID:      "my-doggy-img",      // Reference in HTML: <img src="cid:my-doggy-img">
+				FileName: "my_doggy.jpg",
+				Data:     doggyData,
+			},
+		},
+		// File attachments (downloadable)
+		Attachments: []mailstyler.Attachment{
+			{
+				FileName: "monthly-report.pdf",
+				Data:     pdfData,
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("failed to send mail: %v", err)
+	}
+
+	log.Println("Mail sent successfully with attachments and inline images!")
+}
+```
+
+### Key Points:
+
+**Inline Images:**
+
+- Use `Content-ID` (CID) to reference images in HTML: `<img src="cid:your-image-id">`
+- Images are embedded in the email body (not downloadable separately)
+- Perfect for logos, banners, and visual elements
+- The `CID` field must match the `cid:` reference in your HTML
+
+**Attachments:**
+
+- Appear as downloadable files in email clients
+- Support any file type (PDF, DOC, ZIP, images, etc.)
+- Encoded as base64 in the MIME message
+
+**Best Practices:**
+
+- Keep inline images small to reduce email size
+- Use appropriate image formats (PNG for logos, JPG for photos)
+- Always provide `alt` text for accessibility
+- Test with multiple email clients (Gmail, Outlook, etc.)
 
 ---
 
@@ -333,7 +460,7 @@ body, err := manager.RenderTemplateWithFuncsAndCSS(
 
 ---
 
-### HTML Content Rendering (New in v0.2.0)
+### HTML Content Rendering (New in v1.0.0)
 
 #### `RenderHTMLContent`
 
@@ -426,7 +553,7 @@ The `examples/` directory contains fully working examples:
 - **03-with-functions** - Custom template functions
 - **04-full-featured** - All features combined (template + CSS + functions + attachments + inline images)
 
-### `02-html-content/` - HTML Content Examples (New in v0.2.0)
+### `02-html-content/` - HTML Content Examples (New in v1.0.0)
 
 - **01-basic** - Basic HTML string rendering
 - **02-with-attachments** - Content rendering with custom functions, attachments, and inline images
