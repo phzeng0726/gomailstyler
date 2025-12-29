@@ -21,7 +21,7 @@ Go Mail Styler is a simple and flexible Go package for sending HTML emails via S
 ## 📦 Installation
 
 ```bash
-go get github.com/phzeng0726/gomailstyler@v1.0.0
+go get github.com/phzeng0726/gomailstyler@v1.0.1
 ```
 
 ---
