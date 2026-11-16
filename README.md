@@ -25,7 +25,7 @@ Go Mail Styler is a simple and flexible Go package for sending HTML emails via S
 **Requirements:** Go 1.26 or later
 
 ```bash
-go get github.com/phzeng0726/gomailstyler@v1.0.1
+go get github.com/phzeng0726/gomailstyler@v1.1.0
 ```
 
 ### ⚠️ Upgrade Notes (reply threading release)
@@ -426,6 +426,7 @@ for start := 0; start < len(recipients); start += batchSize {
 	}
 }
 ```
+
 - Some SMTP servers record the recipient in their own `Received: ... for <addr>` trace header when there is a single recipient; this is server behavior outside the library's control.
 
 ---
