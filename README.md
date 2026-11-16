@@ -20,6 +20,8 @@ Go Mail Styler is a simple and flexible Go package for sending HTML emails via S
 
 ## 📦 Installation
 
+**Requirements:** Go 1.26 or later
+
 ```bash
 go get github.com/phzeng0726/gomailstyler@v1.0.1
 ```
@@ -575,6 +577,21 @@ SMTP_SENDER=your-email@example.com
 SMTP_PASSWORD=your-smtp-password    # Optional: for SMTP authentication
 MAIL_RECEIVER=recipient@example.com
 ```
+
+---
+
+## 🧪 Running Tests
+
+Unit tests need no network, `.env` file, or real SMTP server — `SendMail` is tested against an in-process fake SMTP server.
+
+```bash
+go test ./...
+
+# With coverage
+go test -cover ./...
+```
+
+See [TESTING_GUIDELINES.md](./TESTING_GUIDELINES.md) for how tests are written in this project.
 
 ---
 

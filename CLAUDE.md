@@ -25,7 +25,19 @@ go mod tidy
 go fmt ./...
 ```
 
-### Testing the Package
+### Unit Tests
+
+Follow [TESTING_GUIDELINES.md](TESTING_GUIDELINES.md) when writing tests (testify suite, white-box, fixtures in `testdata/`).
+
+```bash
+# Run all unit tests (no network, .env, or real SMTP server needed)
+go test ./...
+
+# Coverage (each package must stay >= 85%)
+go test -cover ./...
+```
+
+### Manual Test with a Real SMTP Server
 
 ```bash
 # Test with the example (requires .env file in examples/)
@@ -105,6 +117,16 @@ gomailstyler/
 - Default functions merged with user-provided custom functions
 - Custom functions override defaults if name collision occurs
 - All render methods log execution time
+- Only the first `FuncMap` in `customFuncs` is used; later ones are ignored
+
+**Known Issues** (pinned by `// KNOWN ISSUE:` tests in `manager_test.go`; update those tests when fixing)
+
+- Header values are not checked for CR/LF, so `Subject`/`To`/`Cc` can inject extra headers
+- `Subject` is written as raw UTF-8, not RFC 2047 encoded
+- Headers are written from a map, so their order is random
+- No `From`, `Date`, or `Message-ID` header is emitted
+- `SendMail`'s `append(mm.To, mm.Cc...)` can write into the caller's `To` backing array
+- HTML part has no `Content-Transfer-Encoding`; lines over 998 chars are possible
 
 ### SMTP Behavior
 
