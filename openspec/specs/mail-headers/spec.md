@@ -75,7 +75,7 @@
 - **THEN** 回傳錯誤，`errors.Is(err, ErrReservedHeader)` 為 true，訊息精確為 `reserved header: "<呼叫端給的名稱>"`
 
 ### Requirement: 拒絕 CR/LF
-`Subject`、`To` 與 `Cc` 的每個地址、`Headers` 的值、附件 `FileName`、inline 圖片 `CID` 與 `FileName` SHALL 不含 `\r` 或 `\n`；違反時 MUST 回傳包裝 `ErrInvalidHeader` 的錯誤，訊息包含欄位名稱。`NewManager` MUST 以同樣規則驗證 `smtpSender`。
+`Subject`、`To`、`Cc` 與 `Bcc` 的每個地址、`Headers` 的值、附件 `FileName`、inline 圖片 `CID` 與 `FileName` SHALL 不含 `\r` 或 `\n`；違反時 MUST 回傳包裝 `ErrInvalidHeader` 的錯誤，訊息包含欄位名稱。`NewManager` MUST 以同樣規則驗證 `smtpSender`。
 
 #### Scenario: Subject 注入
 - **WHEN** `Subject` 為 `Hello\r\nBcc: evil@example.com`
@@ -88,6 +88,10 @@
 #### Scenario: sender 含換行
 - **WHEN** `WithSMTP` 的 sender 含 `\r\n`
 - **THEN** `NewManager` 回傳錯誤，`errors.Is(err, ErrInvalidHeader)` 為 true
+
+#### Scenario: Bcc 含換行
+- **WHEN** `Bcc` 第 2 個地址含 `\r\n`
+- **THEN** 回傳錯誤，`errors.Is(err, ErrInvalidHeader)` 為 true，訊息精確為 `invalid header: Bcc[1] contains CR or LF`，且 `SendMail` 不連線 SMTP server
 
 ### Requirement: 附件檔名不可含雙引號
 附件與 inline 圖片的 `FileName`、inline 圖片的 `CID` SHALL 不含 `"`（`FileName` 寫在引號內）以及 `<`、`>`（`CID`）；違反時回傳 `ErrInvalidHeader`。
