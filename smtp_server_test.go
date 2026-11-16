@@ -18,12 +18,13 @@ type fakeSMTPOptions struct {
 
 // fakeSMTPRecord holds everything the server received during a session
 type fakeSMTPRecord struct {
-	mailFrom   string
-	rcpts      []string
-	authCalled bool
-	authUser   string
-	authPass   string
-	data       string // DATA payload with dot-stuffing removed and CRLF normalized to LF
+	connections int // number of accepted TCP connections
+	mailFrom    string
+	rcpts       []string
+	authCalled  bool
+	authUser    string
+	authPass    string
+	data        string // DATA payload with dot-stuffing removed and CRLF normalized to LF
 }
 
 // fakeSMTPServer is a minimal in-process SMTP server for SendMail tests.
@@ -73,6 +74,9 @@ func (s *fakeSMTPServer) serve() {
 		if err != nil {
 			return
 		}
+		s.mu.Lock()
+		s.record.connections++
+		s.mu.Unlock()
 		go s.handle(conn)
 	}
 }

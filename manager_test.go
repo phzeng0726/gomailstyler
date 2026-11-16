@@ -9,6 +9,7 @@ import (
 	"log"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/textproto"
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/suite"
@@ -25,12 +27,20 @@ import (
 const (
 	testdataPath = "internal/service/testdata"
 	testSender   = "sender@example.com"
+	// testDate is fixedNow formatted as RFC 1123 with numeric zone
+	testDate = "Mon, 16 Nov 2026 09:30:00 +0800"
 )
+
+// fixedNow is injected as Manager.now so the Date header is predictable
+var fixedNow = time.Date(2026, 11, 16, 9, 30, 0, 0, time.FixedZone("CST", 8*60*60))
 
 // pngHeader is enough for http.DetectContentType to report image/png
 var pngHeader = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
 
-var boundaryPattern = regexp.MustCompile(`^[0-9a-f]{60}$`)
+var (
+	boundaryPattern      = regexp.MustCompile(`^[0-9a-f]{60}$`)
+	boundaryParamPattern = regexp.MustCompile(`boundary=[0-9a-f]{60}`)
+)
 
 type rawPart struct {
 	header textproto.MIMEHeader
@@ -64,6 +74,7 @@ func (s *ManagerSuite) newManager(opts ...ManagerOption) *Manager {
 
 	m, err := NewManager(opts...)
 	s.Require().NoError(err)
+	m.now = func() time.Time { return fixedNow }
 	return m
 }
 
@@ -71,6 +82,15 @@ func (s *ManagerSuite) newManagerForServer(srv *fakeSMTPServer, opts ...ManagerO
 	s.T().Helper()
 
 	return s.newManager(append([]ManagerOption{WithSMTP("127.0.0.1", srv.Port(), testSender)}, opts...)...)
+}
+
+// build calls buildHTMLMessage and requires it to succeed
+func (s *ManagerSuite) build(m *Manager, mm MailMessage) []byte {
+	s.T().Helper()
+
+	raw, err := m.buildHTMLMessage(mm)
+	s.Require().NoError(err)
+	return raw
 }
 
 // parseMessage splits a MIME message into headers and raw (undecoded) parts
@@ -101,6 +121,12 @@ func (s *ManagerSuite) parseMessage(raw []byte) parsedMessage {
 	return parsedMessage{header: msg.Header, boundary: params["boundary"], parts: parts}
 }
 
+// headerBlock returns the raw top-level header section with the boundary replaced by "BOUNDARY"
+func headerBlock(raw []byte) string {
+	block, _, _ := bytes.Cut(raw, []byte("\r\n\r\n"))
+	return boundaryParamPattern.ReplaceAllString(string(block)+"\r\n", "boundary=BOUNDARY")
+}
+
 // base64Lines returns the non-empty lines of a base64 part body
 func base64Lines(body string) []string {
 	return strings.FieldsFunc(body, func(r rune) bool { return r == '\r' || r == '\n' })
@@ -108,6 +134,14 @@ func base64Lines(body string) []string {
 
 func decodeBase64Part(body string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(strings.Join(base64Lines(body), ""))
+}
+
+func (s *ManagerSuite) decodeQP(body string) string {
+	s.T().Helper()
+
+	decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(body)))
+	s.Require().NoError(err)
+	return string(decoded)
 }
 
 // --- NewManager ---
@@ -133,6 +167,14 @@ func (s *ManagerSuite) TestNewManager_MissingRequiredField() {
 	}
 }
 
+func (s *ManagerSuite) TestNewManager_SenderWithCRLF() {
+	m, err := NewManager(WithSMTP("smtp.example.com", "587", "sender@example.com\r\nBcc: evil@example.com"))
+
+	s.ErrorIs(err, ErrInvalidHeader)
+	s.EqualError(err, "invalid manager config: invalid header: smtpSender contains CR or LF")
+	s.Nil(m)
+}
+
 func (s *ManagerSuite) TestNewManager_NoOptions() {
 	m, err := NewManager()
 
@@ -149,6 +191,14 @@ func (s *ManagerSuite) TestNewManager_MinimalOptions() {
 	s.Nil(m.smtpPassword)
 	s.NotNil(m.tmplSvc)
 	s.NotNil(m.cssToolSvc)
+}
+
+func (s *ManagerSuite) TestNewManager_DefaultClockIsTimeNow() {
+	m, err := NewManager(WithSMTP("smtp.example.com", "587", testSender))
+	s.Require().NoError(err)
+
+	s.Require().NotNil(m.now)
+	s.WithinDuration(time.Now(), m.now(), time.Second)
 }
 
 func (s *ManagerSuite) TestNewManager_AllOptions() {
@@ -183,48 +233,119 @@ func (s *ManagerSuite) TestNewManager_EmptyPasswordStillSet() {
 func (s *ManagerSuite) TestBuildHTMLMessage_Minimal() {
 	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
 
-	msg := s.parseMessage(m.buildHTMLMessage(MailMessage{
+	raw := s.build(m, MailMessage{
 		Subject: "Maintenance notice",
 		Message: "<p>Hello</p>",
 		To:      []string{"a@example.com"},
-	}))
+	})
 
-	// KNOWN ISSUE: no From, Date or Message-ID header is emitted
-	s.Len(msg.header, 4)
-	s.Equal("1.0", msg.header.Get("MIME-Version"))
-	s.Equal("a@example.com", msg.header.Get("To"))
-	s.Equal("Maintenance notice", msg.header.Get("Subject"))
-	s.Equal("multipart/mixed; boundary="+msg.boundary, msg.header.Get("Content-Type"))
+	s.Equal("From: sender@example.com\r\n"+
+		"To: a@example.com\r\n"+
+		"Subject: Maintenance notice\r\n"+
+		"Date: "+testDate+"\r\n"+
+		"MIME-Version: 1.0\r\n"+
+		"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n", headerBlock(raw))
+
+	msg := s.parseMessage(raw)
 	s.Regexp(boundaryPattern, msg.boundary)
 
-	_, hasCc := msg.header["Cc"]
-	s.False(hasCc, "Cc header must be absent when there is no Cc")
-
 	s.Require().Len(msg.parts, 1)
-	s.Equal(textproto.MIMEHeader{"Content-Type": {`text/html; charset="UTF-8"`}}, msg.parts[0].header)
-	s.Equal("<p>Hello</p>", msg.parts[0].body)
+	s.Equal(textproto.MIMEHeader{
+		"Content-Type":              {`text/html; charset="UTF-8"`},
+		"Content-Transfer-Encoding": {"quoted-printable"},
+	}, msg.parts[0].header)
+	s.Equal("<p>Hello</p>", s.decodeQP(msg.parts[0].body))
 }
 
 func (s *ManagerSuite) TestBuildHTMLMessage_MultipleRecipientsAndCc() {
 	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
 
-	msg := s.parseMessage(m.buildHTMLMessage(MailMessage{
+	msg := s.parseMessage(s.build(m, MailMessage{
 		Subject: "Notice",
 		Message: "<p>Hi</p>",
 		To:      []string{"a@example.com", "b@example.com"},
 		Cc:      []string{"c@example.com", "d@example.com"},
 	}))
 
-	s.Len(msg.header, 5)
+	s.Len(msg.header, 7)
 	s.Equal("a@example.com,b@example.com", msg.header.Get("To"))
 	s.Equal("c@example.com,d@example.com", msg.header.Get("Cc"))
+}
+
+func (s *ManagerSuite) TestBuildHTMLMessage_FullThreadingHeaderBlock() {
+	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
+
+	raw := s.build(m, MailMessage{
+		Subject:   "RE: Maintenance notice",
+		Message:   "<p>Done</p>",
+		To:        []string{"a@example.com"},
+		Cc:        []string{"c@example.com"},
+		MessageID: "done.42.7@example.com",
+		InReplyTo: "<maintenance.42.7@example.com>",
+		Headers: map[string]string{
+			"X-Notice-ID":  "42",
+			"Thread-Topic": "Maintenance notice",
+		},
+	})
+
+	s.Equal("From: sender@example.com\r\n"+
+		"To: a@example.com\r\n"+
+		"Cc: c@example.com\r\n"+
+		"Subject: RE: Maintenance notice\r\n"+
+		"Date: "+testDate+"\r\n"+
+		"Message-ID: <done.42.7@example.com>\r\n"+
+		"In-Reply-To: <maintenance.42.7@example.com>\r\n"+
+		"References: <maintenance.42.7@example.com>\r\n"+
+		"Thread-Topic: Maintenance notice\r\n"+
+		"X-Notice-ID: 42\r\n"+
+		"MIME-Version: 1.0\r\n"+
+		"Content-Type: multipart/mixed; boundary=BOUNDARY\r\n", headerBlock(raw))
+}
+
+func (s *ManagerSuite) TestBuildHTMLMessage_FoldedReferencesParse() {
+	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
+	refs := []string{
+		"ref-01-abcdefgh@example.com",
+		"ref-02-abcdefgh@example.com",
+		"<ref-03-abcdefgh@example.com>",
+		"ref-04-abcdefgh@example.com",
+	}
+
+	raw := s.build(m, MailMessage{
+		Subject:    "RE: Folded",
+		Message:    "<p>x</p>",
+		To:         []string{"a@example.com"},
+		References: refs,
+	})
+
+	// The raw header is folded onto a continuation line...
+	s.Contains(headerBlock(raw), "References: <ref-01-abcdefgh@example.com> <ref-02-abcdefgh@example.com>\r\n <ref-03-abcdefgh@example.com> <ref-04-abcdefgh@example.com>\r\n")
+	// ...and unfolds to the space-separated ID list when parsed
+	s.Equal("<ref-01-abcdefgh@example.com> <ref-02-abcdefgh@example.com> <ref-03-abcdefgh@example.com> <ref-04-abcdefgh@example.com>",
+		s.parseMessage(raw).header.Get("References"))
+}
+
+func (s *ManagerSuite) TestBuildHTMLMessage_HeaderOrderIsStable() {
+	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
+	mm := MailMessage{
+		Subject: "Order",
+		Message: "<p>x</p>",
+		To:      []string{"a@example.com"},
+		Headers: map[string]string{"X-C": "3", "x-a": "1", "X-B": "2", "Thread-Topic": "t"},
+	}
+
+	first := headerBlock(s.build(m, mm))
+	for range 20 {
+		s.Equal(first, headerBlock(s.build(m, mm)))
+	}
+	s.Contains(first, "Thread-Topic: t\r\nx-a: 1\r\nX-B: 2\r\nX-C: 3\r\nMIME-Version: 1.0\r\n")
 }
 
 func (s *ManagerSuite) TestBuildHTMLMessage_AttachmentAndInlineImage() {
 	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
 	attachment := []byte("hello attachment")
 
-	msg := s.parseMessage(m.buildHTMLMessage(MailMessage{
+	msg := s.parseMessage(s.build(m, MailMessage{
 		Subject:      "With files",
 		Message:      `<img src="cid:logo">`,
 		To:           []string{"a@example.com"},
@@ -235,7 +356,7 @@ func (s *ManagerSuite) TestBuildHTMLMessage_AttachmentAndInlineImage() {
 	s.Require().Len(msg.parts, 3)
 
 	// Part order: HTML, attachments, inline images
-	s.Equal(`<img src="cid:logo">`, msg.parts[0].body)
+	s.Equal(`<img src="cid:logo">`, s.decodeQP(msg.parts[0].body))
 
 	att := msg.parts[1]
 	s.Equal(textproto.MIMEHeader{
@@ -262,7 +383,7 @@ func (s *ManagerSuite) TestBuildHTMLMessage_AttachmentAndInlineImage() {
 func (s *ManagerSuite) TestBuildHTMLMessage_MultipleAttachmentsKeepOrder() {
 	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
 
-	msg := s.parseMessage(m.buildHTMLMessage(MailMessage{
+	msg := s.parseMessage(s.build(m, MailMessage{
 		Subject:     "Files",
 		Message:     "<p>x</p>",
 		To:          []string{"a@example.com"},
@@ -295,7 +416,7 @@ func (s *ManagerSuite) TestBuildHTMLMessage_Base64LineLength() {
 		s.Run(tc.name, func() {
 			data := bytes.Repeat([]byte("a"), tc.size)
 
-			msg := s.parseMessage(m.buildHTMLMessage(MailMessage{
+			msg := s.parseMessage(s.build(m, MailMessage{
 				Subject:     "Base64",
 				Message:     "<p>x</p>",
 				To:          []string{"a@example.com"},
@@ -315,36 +436,62 @@ func (s *ManagerSuite) TestBuildHTMLMessage_Base64LineLength() {
 	}
 }
 
-func (s *ManagerSuite) TestBuildHTMLMessage_SubjectWithCRLF() {
+func (s *ManagerSuite) TestBuildHTMLMessage_LongNonASCIIBodyIsQuotedPrintable() {
+	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
+	body := strings.Repeat("<p>維護完成通知</p>", 100) // single line, well over 998 bytes
+	s.Require().Greater(len(body), 998)
+
+	msg := s.parseMessage(s.build(m, MailMessage{
+		Subject: "QP",
+		Message: body,
+		To:      []string{"a@example.com"},
+	}))
+	s.Require().Len(msg.parts, 1)
+
+	raw := msg.parts[0].body
+	for line := range strings.SplitSeq(raw, "\r\n") {
+		s.LessOrEqual(len(line), 76, "line too long: %q", line)
+	}
+	for i := 0; i < len(raw); i++ {
+		s.Require().Less(raw[i], byte(0x80), "non-ASCII byte at %d", i)
+	}
+	s.Equal(body, s.decodeQP(raw))
+}
+
+func (s *ManagerSuite) TestBuildHTMLMessage_SubjectWithCRLFRejected() {
 	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
 
-	msg := s.parseMessage(m.buildHTMLMessage(MailMessage{
+	raw, err := m.buildHTMLMessage(MailMessage{
 		Subject: "Hello\r\nBcc: evil@example.com",
 		Message: "<p>x</p>",
 		To:      []string{"a@example.com"},
-	}))
+	})
 
-	// KNOWN ISSUE: CR/LF in header values is not rejected, so callers can inject headers.
-	// The fix should return an error instead of producing this message.
-	s.Equal("Hello", msg.header.Get("Subject"))
-	s.Equal("evil@example.com", msg.header.Get("Bcc"))
+	s.ErrorIs(err, ErrInvalidHeader)
+	s.EqualError(err, "invalid header: Subject contains CR or LF")
+	s.Nil(raw)
 }
 
-func (s *ManagerSuite) TestBuildHTMLMessage_NonASCIISubject() {
+func (s *ManagerSuite) TestBuildHTMLMessage_NonASCIISubjectEncoded() {
 	m := s.newManager(WithSMTP("smtp.example.com", "587", testSender))
 	subject := "RE: 維護完成通知"
 
-	raw := m.buildHTMLMessage(MailMessage{
+	raw := s.build(m, MailMessage{
 		Subject: subject,
 		Message: "<p>x</p>",
 		To:      []string{"a@example.com"},
 	})
 
-	// KNOWN ISSUE: Subject is written as raw UTF-8 instead of RFC 2047 encoding
-	// (expected after fix: "=?UTF-8?q?...?=" produced by mime.QEncoding)
-	s.True(bytes.Contains(raw, []byte("Subject: "+subject+"\r\n")))
-	s.False(bytes.Contains(raw, []byte("=?UTF-8?")))
-	s.Equal(subject, s.parseMessage(raw).header.Get("Subject"))
+	header := headerBlock(raw)
+	s.Contains(header, "Subject: =?UTF-8?q?")
+	for i := 0; i < len(header); i++ {
+		s.Require().Less(header[i], byte(0x80), "non-ASCII byte in header at %d", i)
+	}
+
+	encoded := s.parseMessage(raw).header.Get("Subject")
+	decoded, err := new(mime.WordDecoder).DecodeHeader(encoded)
+	s.Require().NoError(err)
+	s.Equal(subject, decoded)
 }
 
 // --- SendMail ---
@@ -365,16 +512,38 @@ func (s *ManagerSuite) TestSendMail_WithoutPassword() {
 	s.Require().NoError(m.SendMail(s.sampleMail()))
 
 	rec := srv.Record()
+	s.Equal(1, rec.connections)
 	s.Equal(testSender, rec.mailFrom)
 	s.Equal([]string{"a@example.com", "b@example.com", "c@example.com"}, rec.rcpts)
 	s.False(rec.authCalled, "AUTH must not be sent without a password")
 
 	msg := s.parseMessage([]byte(rec.data))
+	s.Equal(testSender, msg.header.Get("From"))
 	s.Equal("a@example.com,b@example.com", msg.header.Get("To"))
 	s.Equal("c@example.com", msg.header.Get("Cc"))
 	s.Equal("Maintenance notice", msg.header.Get("Subject"))
+	s.Equal(testDate, msg.header.Get("Date"))
 	s.Require().Len(msg.parts, 1)
-	s.Equal("<p>Scheduled maintenance</p>", msg.parts[0].body)
+	s.Equal("<p>Scheduled maintenance</p>", s.decodeQP(msg.parts[0].body))
+}
+
+func (s *ManagerSuite) TestSendMail_ThreadingHeaders() {
+	srv := newFakeSMTPServer(s.T(), fakeSMTPOptions{advertiseAuth: true})
+	m := s.newManagerForServer(srv)
+
+	mm := s.sampleMail()
+	mm.Subject = "RE: Maintenance notice"
+	mm.MessageID = "done.42.7@example.com"
+	mm.InReplyTo = "maintenance.42.7@example.com"
+	mm.References = []string{"maintenance.42.7@example.com"}
+
+	s.Require().NoError(m.SendMail(mm))
+
+	msg := s.parseMessage([]byte(srv.Record().data))
+	s.Equal("RE: Maintenance notice", msg.header.Get("Subject"))
+	s.Equal("<done.42.7@example.com>", msg.header.Get("Message-ID"))
+	s.Equal("<maintenance.42.7@example.com>", msg.header.Get("In-Reply-To"))
+	s.Equal("<maintenance.42.7@example.com>", msg.header.Get("References"))
 }
 
 func (s *ManagerSuite) TestSendMail_EmptyPasswordSkipsAuth() {
@@ -441,7 +610,21 @@ func (s *ManagerSuite) TestSendMail_ConnectionRefused() {
 	s.Equal("dial", opErr.Op)
 }
 
-func (s *ManagerSuite) TestSendMail_AppendWritesIntoCallerToSlice() {
+func (s *ManagerSuite) TestSendMail_ValidationFailsBeforeConnecting() {
+	srv := newFakeSMTPServer(s.T(), fakeSMTPOptions{advertiseAuth: true})
+	m := s.newManagerForServer(srv)
+
+	mm := s.sampleMail()
+	mm.Headers = map[string]string{"Subject": "override"}
+
+	err := m.SendMail(mm)
+
+	s.ErrorIs(err, ErrReservedHeader)
+	s.EqualError(err, `reserved header: "Subject"`)
+	s.Equal(0, srv.Record().connections)
+}
+
+func (s *ManagerSuite) TestSendMail_DoesNotModifyCallerToSlice() {
 	srv := newFakeSMTPServer(s.T(), fakeSMTPOptions{advertiseAuth: true})
 	m := s.newManagerForServer(srv)
 
@@ -457,9 +640,7 @@ func (s *ManagerSuite) TestSendMail_AppendWritesIntoCallerToSlice() {
 		Cc:      []string{"c@example.com"},
 	}))
 
-	// KNOWN ISSUE: `append(mm.To, mm.Cc...)` reuses the caller's backing array
-	// when it has spare capacity. Expected after fix: backing[1] == "untouched".
-	s.Equal("c@example.com", backing[1])
+	s.Equal("untouched", backing[1])
 	s.Equal([]string{"a@example.com", "c@example.com"}, srv.Record().rcpts)
 }
 
