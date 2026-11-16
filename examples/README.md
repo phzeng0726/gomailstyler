@@ -13,7 +13,9 @@ examples/
 │   └── 04-full-featured/      # All features combined
 ├── 02-html-content/           # Examples using HTML content strings
 │   ├── 01-basic/              # Basic HTML content rendering
-│   └── 02-with-attachments/   # HTML content with attachments
+│   ├── 02-with-attachments/   # HTML content with attachments
+│   ├── 03-reply-thread/       # Notice + reply in the same mail thread
+│   └── 04-with-bcc/           # Hidden (Bcc) recipients
 ├── assets/                    # Shared resources
 │   ├── templates/             # HTML template files
 │   │   ├── welcome.html
@@ -38,6 +40,7 @@ Create a `.env` file in the `examples/` directory with your SMTP settings:
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SENDER=your-email@example.com
+SMTP_PASSWORD=your-smtp-password    # Optional: for SMTP authentication
 MAIL_RECEIVER=recipient@example.com
 ```
 
@@ -210,6 +213,52 @@ cd 02-html-content/02-with-attachments && go run main.go
 
 ---
 
+#### 03-reply-thread
+
+**What it demonstrates:**
+
+- Sending a "maintenance notice" with a custom `MessageID`
+- Sending a "maintenance completed" mail that replies to it via `InReplyTo`
+- Custom headers (`X-Notice-ID`, `Thread-Topic`) via `Headers`
+- RFC 2047 encoding of a non-ASCII subject
+
+**What to check:**
+
+- Both mails appear in **one conversation** in Gmail and Outlook
+- The second mail's subject is `RE: ` + the first mail's subject
+- Each run uses a new notice ID, so it always starts a new thread
+
+**Run:**
+
+```bash
+cd 02-html-content/03-reply-thread && go run main.go
+```
+
+---
+
+#### 04-with-bcc
+
+**What it demonstrates:**
+
+- Hidden recipients with the `Bcc` field
+- Bcc addresses only go to the SMTP envelope; no `Bcc` header is written
+- Sending with Bcc only (no `To` header at all)
+
+**What to check:**
+
+- `MAIL_RECEIVER` receives **two** mails
+- Mail 1 shows `SMTP_SENDER` in To; your own address does not appear in To or Cc (use two different mailboxes for `SMTP_SENDER` and `MAIL_RECEIVER`)
+- Mail 2 has an empty or "undisclosed recipients" To field
+- "Show original" in your mail client contains no `Bcc` header
+
+**Run:**
+
+```bash
+cd 02-html-content/04-with-bcc && go run main.go
+```
+
+---
+
 ## 🔧 Utility Functions
 
 The `utils/helpers.go` file provides shared utilities:
@@ -227,6 +276,8 @@ The `utils/helpers.go` file provides shared utilities:
 | Full-featured email (images, attachments, styling) | 01-template-file/04-full-featured   |
 | Dynamic HTML without files                         | 02-html-content/01-basic            |
 | Dynamic HTML with media                            | 02-html-content/02-with-attachments |
+| Follow-up mail in the same thread (reply)          | 02-html-content/03-reply-thread     |
+| Hidden recipients (Bcc)                            | 02-html-content/04-with-bcc         |
 
 ## 📖 Default Template Functions
 
@@ -288,16 +339,17 @@ All examples have access to these built-in functions:
 | `SMTP_HOST`     | SMTP server hostname    | `smtp.gmail.com`   |
 | `SMTP_PORT`     | SMTP port (usually 587) | `587`              |
 | `SMTP_SENDER`   | Sender email address    | `you@example.com`  |
+| `SMTP_PASSWORD` | SMTP password (optional) | `app-password`    |
 | `MAIL_RECEIVER` | Test recipient email    | `test@example.com` |
 
 ## ⚠️ SMTP Notes
 
-- Current implementation uses **plain SMTP** (no authentication)
-- Suitable for:
+- If `SMTP_PASSWORD` is set, the examples call `WithSMTPPassword` and authenticate with **SMTP PLAIN** using `SMTP_SENDER` as the username
+- If `SMTP_PASSWORD` is empty, mail is sent **without authentication**, which suits:
   - Local mail servers
   - SMTP relays with IP-based auth
-  - Authenticated SMTP (handled by relay layer)
-- For production, consider adding authentication support
+- `SMTP_SENDER` must usually match the authenticated user; it is also used as the `From` header
+- Port 587 is typical for submission with STARTTLS (negotiated automatically when the server offers it)
 
 ## 🤝 Contributing
 

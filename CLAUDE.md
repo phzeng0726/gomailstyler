@@ -56,6 +56,8 @@ The codebase follows a layered architecture:
 gomailstyler/
 ├── manager.go          # Public API & Manager implementation
 ├── message.go          # Public message types (MailMessage, Attachment, InlineImage)
+├── header.go           # Header validation, ordering, encoding (Message-ID, References, custom headers)
+├── errors.go           # Exported sentinel errors (ErrInvalidHeader, ErrReservedHeader, ErrInvalidMessageID)
 └── internal/service/   # Internal service layer
     ├── service.go      # Service initialization & dependency injection
     ├── template.go     # Template rendering (TemplatesService)
@@ -89,20 +91,25 @@ gomailstyler/
 
 2. **Email Sending Flow**:
    - User constructs `MailMessage` with rendered body
-   - Manager builds MIME multipart message via `buildHTMLMessage()`
+   - Manager builds MIME multipart message via `buildHTMLMessage()`, which validates all headers first (`buildHeaders()` in header.go) and returns an error before any SMTP connection
    - HTML body, attachments, and inline images encoded as separate MIME parts
-   - Message sent via `smtp.SendMail()` with no authentication (plain SMTP)
+   - Message sent via `smtp.SendMail()` (PLAIN auth only when a password is set)
 
 ### Critical Implementation Details
 
-**MIME Message Construction** (manager.go:92-136)
+**MIME Message Construction** (manager.go `buildHTMLMessage`, header.go `buildHeaders`)
 
 - Uses multipart/mixed boundary for complex emails
-- HTML body encoded as `text/html; charset="UTF-8"`
+- Headers are an ordered `[]headerField`, never a map: `From`, `To`, `Cc`, `Subject`, `Date`, `Message-ID`, `In-Reply-To`, `References`, custom headers (sorted case-insensitively), `MIME-Version`, `Content-Type`
+- `From` = smtpSender; `Date` comes from `Manager.now` (tests inject a fixed time)
+- `To`/`Cc` headers are written only when non-empty; `Bcc` is never written as a header (envelope only, but still validated)
+- Every header value (and every Bcc address) is checked for CR/LF (`ErrInvalidHeader`); custom header names cannot be reserved (`ErrReservedHeader`) or duplicated
+- `MessageID`/`InReplyTo`/`References` are normalized to `<id@domain>` (`ErrInvalidMessageID` otherwise); `References` defaults to `[InReplyTo]` and folds at 78 chars
+- `Subject` and custom header values use RFC 2047 (`mime.QEncoding`); ASCII stays unchanged
+- HTML body is `text/html; charset="UTF-8"` with quoted-printable transfer encoding
 - Attachments use base64 encoding with 76-character line splits
 - Inline images use `Content-ID` headers for HTML embedding (e.g., `cid:my-image`)
-- Headers include `From`, `To`, `Subject`, optional `Cc`
-- Recent fix: Removed duplicate `From` header in HTML section to pass email validation
+- `SendMail` copies `To` + `Cc` + `Bcc` (in that order) into a new slice for `RCPT TO`; it never mutates the caller's `MailMessage`
 
 **CSS Inlining** (css_tool.go:86-145)
 
@@ -118,15 +125,6 @@ gomailstyler/
 - Custom functions override defaults if name collision occurs
 - All render methods log execution time
 - Only the first `FuncMap` in `customFuncs` is used; later ones are ignored
-
-**Known Issues** (pinned by `// KNOWN ISSUE:` tests in `manager_test.go`; update those tests when fixing)
-
-- Header values are not checked for CR/LF, so `Subject`/`To`/`Cc` can inject extra headers
-- `Subject` is written as raw UTF-8, not RFC 2047 encoded
-- Headers are written from a map, so their order is random
-- No `From`, `Date`, or `Message-ID` header is emitted
-- `SendMail`'s `append(mm.To, mm.Cc...)` can write into the caller's `To` backing array
-- HTML part has no `Content-Transfer-Encoding`; lines over 998 chars are possible
 
 ### SMTP Behavior
 

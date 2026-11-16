@@ -17,6 +17,9 @@
 | `SendMail` 的 `smtpPassword != nil && *smtpPassword != ""` | 未設定密碼、空字串密碼、有密碼三種情況 |
 | `insertCSSIntoHead` 的 `head.Length() == 0` | template 有 `<head>` 與沒有 `<head>` 各一個測試 |
 | service 的 `len(customFuncs) > 0` | 不傳自訂函式、傳一個、傳多個（只有第一個生效） |
+| `header.go` 的每個驗證（CR/LF、名稱字元、保留名稱、重複名稱、Message-ID 格式） | 合法輸入一個測試、每種違規各一個測試（含只有 CR 或只有 LF） |
+| `formatReferences` 的 `lineLen+1+len(id) > 78` | 剛好 78 字元不折行、79 字元折行各一個測試 |
+| `buildThreadingHeaders` 的 `len(refs) == 0 && inReplyTo != ""` | 只給 InReplyTo、只給 References、兩者都給各一個測試 |
 
 邊界值測試：剛好在限制上、超過限制各一個，確保測到的是 `>` 而不是 `>=`（或反之）。
 
@@ -26,18 +29,21 @@
 
 - **字串結果**（template 渲染）：用 `s.Equal(expected, got)` 精確比對完整字串
 - **MIME 訊息**（`buildHTMLMessage` 輸出）：
-  - 以 `net/mail.ReadMessage` 解析 header 後逐欄位 `Equal`。**不得**比對整段 header 文字，因為目前 header 是從 map 輸出，順序隨機
+  - header 順序是固定的，可直接以精確字串比對整段 header 區塊：用 `headerBlock()` 取出並把 boundary 換成 `BOUNDARY`，`Date` 則由測試注入的 `fixedNow`（`m.now`）固定
+  - 只需要個別欄位時，以 `net/mail.ReadMessage` 解析 header 後逐欄位 `Equal`；RFC 2047 編碼的值用 `mime.WordDecoder` 解碼後比對
   - 以 `mime.ParseMediaType` 取出 boundary，再用 `multipart.NewReader` 逐一讀取 part，驗證 part 數量、順序、每個 part 的 header 與內容
   - 附件與 inline 圖片：base64 解碼後與原始 bytes 比對
+  - HTML part：quoted-printable 解碼後與原始 `Message` 比對
 - **HTML 結果**（CSS inline）：以 goquery 解析後，對目標元素的 `style`、`class` 屬性做精確比對；不比對整份 HTML，避免和 premailer 的序列化細節綁死
 - **集合結果**（RCPT 收件者清單等）：驗證長度與每個元素的值和順序
 
 ### 3. 錯誤身份驗證 (Error Identity Verification)
 
-所有 error path 測試都必須驗證錯誤的具體身份，不得只寫 `s.Error(err)`。本專案沒有自訂 sentinel error，依錯誤來源分三種方式：
+所有 error path 測試都必須驗證錯誤的具體身份，不得只寫 `s.Error(err)`。依錯誤來源分四種方式，優先使用本專案的 sentinel error：
 
 | 錯誤來源 | 驗證方式 | 範例 |
 |---|---|---|
+| 本專案的 sentinel error（`errors.go`） | `errors.Is` **並且**完整字串比對，確認是哪個欄位出錯 | `s.ErrorIs(err, ErrInvalidHeader)` + `s.EqualError(err, "invalid header: Subject contains CR or LF")` |
 | 被 `%w` 包裝的標準庫錯誤 | `errors.Is` | 檔案不存在：`s.ErrorIs(err, fs.ErrNotExist)` |
 | 有型別的錯誤 | `errors.AsType` 並驗證欄位 | `execErr, ok := errors.AsType[template.ExecError](err)`；SMTP 回應碼：`errors.AsType[*textproto.Error](err)` 後驗證 `.Code` |
 | `errors.New` / 字串型錯誤 | 完整字串比對 `s.EqualError` | `s.EqualError(err, "invalid manager config: empty smtpHost")` |
@@ -49,7 +55,8 @@
 | 元件 | 要求 |
 |---|---|
 | **Manager 設定 / Options** | 每個必填欄位缺漏各一個測試，用 `EqualError` 驗證；Options 套用後逐欄位驗證 Manager 內部欄位（white-box）；`smtpPassword` 要區分 nil 與空字串 |
-| **MIME 組裝** | 依「精確斷言」的方式解析；驗證 `MIME-Version`、`To`、`Subject`、`Content-Type`、`Cc` 每個 header；驗證 part 順序固定為 HTML → 附件 → inline 圖片；驗證每個 part 的 `Content-Type`、`Content-Transfer-Encoding`、`Content-Disposition`、`Content-ID`；base64 每行 76 字元 |
+| **Header 組裝** | `buildHeaders` 的輸出以 `[]headerField` 精確比對名稱與順序；每個驗證錯誤用 sentinel + 完整錯誤字串驗證；非 ASCII 值驗證編碼後可解回原值 |
+| **MIME 組裝** | 依「精確斷言」的方式解析；以整段 header 區塊或逐欄位驗證 `From`、`To`、`Cc`、`Subject`、`Date`、threading header、`MIME-Version`、`Content-Type`；驗證 part 順序固定為 HTML → 附件 → inline 圖片；驗證每個 part 的 `Content-Type`、`Content-Transfer-Encoding`、`Content-Disposition`、`Content-ID`；base64 每行 76 字元 |
 | **SMTP 寄送** | 使用測試內建的假 SMTP server（`smtp_server_test.go`），驗證 `MAIL FROM`、`RCPT` 清單與順序（To 在前、Cc 在後）、是否送出 `AUTH` 及解碼後的帳密、`DATA` 內容可被解析成正確的 MIME 訊息；失敗路徑驗證 SMTP 回應碼 |
 | **Template 渲染** | 輸出用完整字串比對；九個預設函式各自驗證輸出值；自訂函式的覆寫與新增都要驗證；檔案不存在、語法錯誤、執行錯誤三種錯誤各一個測試 |
 | **CSS inline** | goquery 驗證目標元素的 `style` 精確值、`class` 已移除、`!important` 有保留；CSS 檔與 template 檔不存在各一個測試，驗證外層訊息前綴與 `fs.ErrNotExist` |

@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"html/template"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/http"
 	"net/smtp"
-	"strings"
+	"time"
 
 	"github.com/phzeng0726/gomailstyler/internal/service"
 )
@@ -35,6 +36,7 @@ type Manager struct {
 	smtpPassword *string
 	tmplSvc      service.Templates
 	cssToolSvc   service.CSSTools
+	now          func() time.Time // source of the Date header; replaced in tests
 }
 
 // ManagerConfig holds configuration for the Manager
@@ -57,6 +59,10 @@ func (c *ManagerConfig) validate() error {
 	}
 	if c.smtpSender == "" {
 		return errors.New("empty smtpSender")
+	}
+	// smtpSender is written into the From header
+	if err := validateHeaderValue("smtpSender", c.smtpSender); err != nil {
+		return err
 	}
 	return nil
 }
@@ -124,6 +130,7 @@ func NewManager(opts ...ManagerOption) (*Manager, error) {
 		smtpPassword: cfg.smtpPassword,
 		tmplSvc:      svc.Templates,
 		cssToolSvc:   svc.CSSTools,
+		now:          time.Now,
 	}, nil
 }
 
@@ -159,30 +166,29 @@ func (m *Manager) writeHTMLAttachment(
 	}
 }
 
-func (m *Manager) buildHTMLMessage(mm MailMessage) []byte {
+func (m *Manager) buildHTMLMessage(mm MailMessage) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
 	writer := multipart.NewWriter(buf)
 	boundary := writer.Boundary()
 
-	headers := map[string]string{
-		"MIME-Version": "1.0",
-		"To":           strings.Join(mm.To, ","),
-		"Subject":      mm.Subject,
-		"Content-Type": fmt.Sprintf("multipart/mixed; boundary=%s", boundary),
+	// Validate and order all headers before writing anything
+	headers, err := m.buildHeaders(mm, boundary)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(mm.Cc) > 0 {
-		headers["Cc"] = strings.Join(mm.Cc, ",")
+	for _, h := range headers {
+		fmt.Fprintf(buf, "%s: %s\r\n", h.name, h.value)
 	}
 
-	for k, v := range headers {
-		buf.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
-	}
-
-	// Write HTML message body
+	// Write HTML message body as quoted-printable to keep lines short and 7-bit
 	buf.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
 	buf.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
-	buf.WriteString("\r\n" + mm.Message)
+	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+
+	qp := quotedprintable.NewWriter(buf)
+	qp.Write([]byte(mm.Message))
+	qp.Close()
 
 	// Add attachments
 	if len(mm.Attachments) > 0 {
@@ -201,15 +207,24 @@ func (m *Manager) buildHTMLMessage(mm MailMessage) []byte {
 	// Final boundary to indicate end of MIME message
 	buf.WriteString(fmt.Sprintf("\r\n--%s--\r\n", boundary))
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 func (m *Manager) SendMail(mm MailMessage) error {
-	addr := fmt.Sprintf("%s:%s", m.smtpHost, m.smtpPort)
-	allRecipients := append(mm.To, mm.Cc...)
+	// Build HTML message first so invalid input fails before connecting
+	msg, err := m.buildHTMLMessage(mm)
+	if err != nil {
+		return err
+	}
 
-	// Build HTML message
-	msg := m.buildHTMLMessage(mm)
+	addr := fmt.Sprintf("%s:%s", m.smtpHost, m.smtpPort)
+
+	// Copy into a new slice so the caller's backing arrays are never modified.
+	// Bcc only goes into the SMTP envelope, never into the message headers.
+	allRecipients := make([]string, 0, len(mm.To)+len(mm.Cc)+len(mm.Bcc))
+	allRecipients = append(allRecipients, mm.To...)
+	allRecipients = append(allRecipients, mm.Cc...)
+	allRecipients = append(allRecipients, mm.Bcc...)
 
 	// Set up authentication if a password is provided
 	var auth smtp.Auth
