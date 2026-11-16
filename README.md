@@ -36,6 +36,7 @@ The public API only gained new fields and errors, so most code keeps compiling a
 - **CR/LF in header values is now an error.** `SendMail` returns `ErrInvalidHeader` when `Subject`, `To`, `Cc`, attachment file names or inline image CIDs contain `\r` or `\n`; `NewManager` does the same for the sender. Such input previously produced malformed mail.
 - **The raw message changed, the rendered mail did not.** `From` and `Date` headers are now always sent, non-ASCII subjects are RFC 2047 encoded, and the HTML body uses quoted-printable. Mail clients decode all of this and display the same result. Update tests that compare raw MIME output.
 - **`From` is always the `sender` from `WithSMTP`.** If you relied on an SMTP relay to insert a `From` header with a display name (e.g. `"System" <noreply@example.com>`), the plain address is now shown instead.
+- **An empty `To` no longer writes an empty `To:` header.** The header is omitted instead (needed for Bcc-only mail); mail clients display the same result.
 
 ---
 
@@ -162,6 +163,7 @@ type MailMessage struct {
 	Message      string          // HTML body content
 	To           []string        // Recipient email addresses
 	Cc           []string        // CC email addresses (optional)
+	Bcc          []string        // Hidden recipients, never written to headers (optional)
 	Attachments  []Attachment    // File attachments (optional)
 	InlineImages []InlineImage   // Inline images for HTML (optional)
 
@@ -381,6 +383,53 @@ Validation runs before connecting, so an invalid message never reaches the SMTP 
 
 ---
 
+## 🙈 Bcc (Hidden Recipients)
+
+```go
+err := manager.SendMail(mailstyler.MailMessage{
+	Subject: "Monthly report",
+	Message: body,
+	To:      []string{"reports@example.com"},
+	Bcc:     []string{"alice@example.com", "bob@example.com"},
+})
+```
+
+- Bcc addresses are only added to the SMTP envelope (`RCPT TO`, after To and Cc); **no `Bcc` header is written**, so no recipient can see them.
+- Bcc-only mail is allowed: when `To` is empty, no `To` header is written. Mail without any To is more likely to be flagged as spam, so prefer putting a fixed mailbox (e.g. your own sender) in `To`.
+- Bcc addresses are validated like To/Cc (`ErrInvalidHeader` for CR/LF) before connecting.
+- Addresses are not de-duplicated across To, Cc and Bcc.
+
+**Many recipients:**
+
+`Bcc` has no size limit in the library, and the message body is sent only once per `SendMail` (one `RCPT TO` per address). Keep in mind:
+
+- SMTP providers cap the number of recipients per message (To + Cc + Bcc combined), e.g. around 500 for Microsoft 365 and around 100 for Gmail SMTP. Check your provider's limits; exceeding them typically returns `452 Too many recipients`.
+- If **any** `RCPT TO` is rejected (unknown mailbox, limit reached), `net/smtp` aborts and **nobody** receives the mail.
+- Daily sending quotas also apply; large bursts can get the account temporarily blocked.
+
+Send in batches so one failure only affects one batch:
+
+```go
+const batchSize = 50
+
+for start := 0; start < len(recipients); start += batchSize {
+	end := min(start+batchSize, len(recipients))
+
+	err := manager.SendMail(mailstyler.MailMessage{
+		Subject: subject,
+		Message: body,
+		To:      []string{"noreply@example.com"},
+		Bcc:     recipients[start:end],
+	})
+	if err != nil {
+		log.Printf("batch %d-%d failed: %v", start, end, err)
+	}
+}
+```
+- Some SMTP servers record the recipient in their own `Received: ... for <addr>` trace header when there is a single recipient; this is server behavior outside the library's control.
+
+---
+
 ## 📘 API Reference
 
 ### Initialization
@@ -430,6 +479,7 @@ Sends an email with the provided message content.
 **Headers:**
 
 - Written in a fixed order: `From`, `To`, `Cc`, `Subject`, `Date`, `Message-ID`, `In-Reply-To`, `References`, custom headers (sorted by name), `MIME-Version`, `Content-Type`
+- `To` and `Cc` are written only when non-empty; `Bcc` is never written (envelope only)
 - `From` is the `sender` passed to `WithSMTP`; `Date` is the send time
 
 **MIME Structure:**
@@ -634,6 +684,7 @@ The `examples/` directory contains fully working examples:
 - **01-basic** - Basic HTML string rendering
 - **02-with-attachments** - Content rendering with custom functions, attachments, and inline images
 - **03-reply-thread** - Maintenance notice followed by a reply in the same thread (custom Message-ID, In-Reply-To, headers)
+- **04-with-bcc** - Hidden recipients: To + Bcc, and Bcc only
 
 ### Running Examples
 

@@ -1,10 +1,13 @@
 package mailstyler
 
 type MailMessage struct {
-	Subject      string
-	Message      string
-	To           []string
-	Cc           []string
+	Subject string
+	Message string
+	To      []string
+	Cc      []string
+	// Bcc recipients receive the mail but never appear in it: they are only
+	// added to the SMTP envelope, no Bcc header is written
+	Bcc          []string
 	Attachments  []Attachment
 	InlineImages []InlineImage
 

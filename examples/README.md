@@ -14,7 +14,8 @@ examples/
 ├── 02-html-content/           # Examples using HTML content strings
 │   ├── 01-basic/              # Basic HTML content rendering
 │   ├── 02-with-attachments/   # HTML content with attachments
-│   └── 03-reply-thread/       # Notice + reply in the same mail thread
+│   ├── 03-reply-thread/       # Notice + reply in the same mail thread
+│   └── 04-with-bcc/           # Hidden (Bcc) recipients
 ├── assets/                    # Shared resources
 │   ├── templates/             # HTML template files
 │   │   ├── welcome.html
@@ -235,6 +236,29 @@ cd 02-html-content/03-reply-thread && go run main.go
 
 ---
 
+#### 04-with-bcc
+
+**What it demonstrates:**
+
+- Hidden recipients with the `Bcc` field
+- Bcc addresses only go to the SMTP envelope; no `Bcc` header is written
+- Sending with Bcc only (no `To` header at all)
+
+**What to check:**
+
+- `MAIL_RECEIVER` receives **two** mails
+- Mail 1 shows `SMTP_SENDER` in To; your own address does not appear in To or Cc (use two different mailboxes for `SMTP_SENDER` and `MAIL_RECEIVER`)
+- Mail 2 has an empty or "undisclosed recipients" To field
+- "Show original" in your mail client contains no `Bcc` header
+
+**Run:**
+
+```bash
+cd 02-html-content/04-with-bcc && go run main.go
+```
+
+---
+
 ## 🔧 Utility Functions
 
 The `utils/helpers.go` file provides shared utilities:
@@ -253,6 +277,7 @@ The `utils/helpers.go` file provides shared utilities:
 | Dynamic HTML without files                         | 02-html-content/01-basic            |
 | Dynamic HTML with media                            | 02-html-content/02-with-attachments |
 | Follow-up mail in the same thread (reply)          | 02-html-content/03-reply-thread     |
+| Hidden recipients (Bcc)                            | 02-html-content/04-with-bcc         |
 
 ## 📖 Default Template Functions
 

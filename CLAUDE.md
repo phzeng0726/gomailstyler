@@ -102,13 +102,14 @@ gomailstyler/
 - Uses multipart/mixed boundary for complex emails
 - Headers are an ordered `[]headerField`, never a map: `From`, `To`, `Cc`, `Subject`, `Date`, `Message-ID`, `In-Reply-To`, `References`, custom headers (sorted case-insensitively), `MIME-Version`, `Content-Type`
 - `From` = smtpSender; `Date` comes from `Manager.now` (tests inject a fixed time)
-- Every header value is checked for CR/LF (`ErrInvalidHeader`); custom header names cannot be reserved (`ErrReservedHeader`) or duplicated
+- `To`/`Cc` headers are written only when non-empty; `Bcc` is never written as a header (envelope only, but still validated)
+- Every header value (and every Bcc address) is checked for CR/LF (`ErrInvalidHeader`); custom header names cannot be reserved (`ErrReservedHeader`) or duplicated
 - `MessageID`/`InReplyTo`/`References` are normalized to `<id@domain>` (`ErrInvalidMessageID` otherwise); `References` defaults to `[InReplyTo]` and folds at 78 chars
 - `Subject` and custom header values use RFC 2047 (`mime.QEncoding`); ASCII stays unchanged
 - HTML body is `text/html; charset="UTF-8"` with quoted-printable transfer encoding
 - Attachments use base64 encoding with 76-character line splits
 - Inline images use `Content-ID` headers for HTML embedding (e.g., `cid:my-image`)
-- `SendMail` copies `To` + `Cc` into a new slice; it never mutates the caller's `MailMessage`
+- `SendMail` copies `To` + `Cc` + `Bcc` (in that order) into a new slice for `RCPT TO`; it never mutates the caller's `MailMessage`
 
 **CSS Inlining** (css_tool.go:86-145)
 

@@ -147,6 +147,12 @@ func (m *Manager) buildHeaders(mm MailMessage, boundary string) ([]headerField, 
 			return nil, err
 		}
 	}
+	// Bcc is never written as a header, but is validated so SendMail fails before connecting
+	for i, addr := range mm.Bcc {
+		if err := validateHeaderValue(fmt.Sprintf("Bcc[%d]", i), addr); err != nil {
+			return nil, err
+		}
+	}
 	for i, att := range mm.Attachments {
 		if err := validateFileName(fmt.Sprintf("Attachments[%d].FileName", i), att.FileName); err != nil {
 			return nil, err
@@ -171,9 +177,10 @@ func (m *Manager) buildHeaders(mm MailMessage, boundary string) ([]headerField, 
 		return nil, err
 	}
 
-	headers := []headerField{
-		{"From", m.smtpSender},
-		{"To", strings.Join(mm.To, ",")},
+	headers := []headerField{{"From", m.smtpSender}}
+	// To is optional in RFC 5322; omit it instead of writing an empty address list
+	if len(mm.To) > 0 {
+		headers = append(headers, headerField{"To", strings.Join(mm.To, ",")})
 	}
 	if len(mm.Cc) > 0 {
 		headers = append(headers, headerField{"Cc", strings.Join(mm.Cc, ",")})

@@ -644,6 +644,84 @@ func (s *ManagerSuite) TestSendMail_DoesNotModifyCallerToSlice() {
 	s.Equal([]string{"a@example.com", "c@example.com"}, srv.Record().rcpts)
 }
 
+func (s *ManagerSuite) TestSendMail_BccOnlyInEnvelope() {
+	srv := newFakeSMTPServer(s.T(), fakeSMTPOptions{advertiseAuth: true})
+	m := s.newManagerForServer(srv)
+
+	mm := s.sampleMail()
+	mm.Bcc = []string{"x@example.com", "secret@example.com"}
+
+	s.Require().NoError(m.SendMail(mm))
+
+	rec := srv.Record()
+	s.Equal([]string{"a@example.com", "b@example.com", "c@example.com", "x@example.com", "secret@example.com"}, rec.rcpts)
+	s.NotContains(rec.data, "x@example.com")
+	s.NotContains(rec.data, "secret@example.com")
+
+	msg := s.parseMessage([]byte(rec.data))
+	_, hasBcc := msg.header["Bcc"]
+	s.False(hasBcc, "Bcc header must never be written")
+	s.Equal("a@example.com,b@example.com", msg.header.Get("To"))
+	s.Equal("c@example.com", msg.header.Get("Cc"))
+}
+
+func (s *ManagerSuite) TestSendMail_BccOnly() {
+	srv := newFakeSMTPServer(s.T(), fakeSMTPOptions{advertiseAuth: true})
+	m := s.newManagerForServer(srv)
+
+	s.Require().NoError(m.SendMail(MailMessage{
+		Subject: "Bcc only",
+		Message: "<p>x</p>",
+		Bcc:     []string{"x@example.com"},
+	}))
+
+	rec := srv.Record()
+	s.Equal([]string{"x@example.com"}, rec.rcpts)
+	s.NotContains(rec.data, "x@example.com")
+
+	// Only From, Subject, Date, MIME-Version and Content-Type remain
+	msg := s.parseMessage([]byte(rec.data))
+	s.Len(msg.header, 5)
+	for _, name := range []string{"To", "Cc", "Bcc"} {
+		_, ok := msg.header[name]
+		s.False(ok, "%s header must be absent", name)
+	}
+}
+
+func (s *ManagerSuite) TestSendMail_InvalidBccFailsBeforeConnecting() {
+	srv := newFakeSMTPServer(s.T(), fakeSMTPOptions{advertiseAuth: true})
+	m := s.newManagerForServer(srv)
+
+	mm := s.sampleMail()
+	mm.Bcc = []string{"x@example.com", "y@example.com\r\nX-Evil: 1"}
+
+	err := m.SendMail(mm)
+
+	s.ErrorIs(err, ErrInvalidHeader)
+	s.EqualError(err, "invalid header: Bcc[1] contains CR or LF")
+	s.Equal(0, srv.Record().connections)
+}
+
+func (s *ManagerSuite) TestSendMail_BccDoesNotModifyCallerSlices() {
+	srv := newFakeSMTPServer(s.T(), fakeSMTPOptions{advertiseAuth: true})
+	m := s.newManagerForServer(srv)
+
+	toBacking := []string{"a@example.com", "to-untouched"}
+	ccBacking := []string{"c@example.com", "cc-untouched"}
+
+	s.Require().NoError(m.SendMail(MailMessage{
+		Subject: "Alias",
+		Message: "<p>x</p>",
+		To:      toBacking[:1], // len 1, cap 2
+		Cc:      ccBacking[:1], // len 1, cap 2
+		Bcc:     []string{"x@example.com"},
+	}))
+
+	s.Equal("to-untouched", toBacking[1])
+	s.Equal("cc-untouched", ccBacking[1])
+	s.Equal([]string{"a@example.com", "c@example.com", "x@example.com"}, srv.Record().rcpts)
+}
+
 // --- Render delegation ---
 
 func (s *ManagerSuite) renderManager() *Manager {

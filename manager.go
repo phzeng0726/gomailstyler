@@ -219,10 +219,12 @@ func (m *Manager) SendMail(mm MailMessage) error {
 
 	addr := fmt.Sprintf("%s:%s", m.smtpHost, m.smtpPort)
 
-	// Copy into a new slice so the caller's To backing array is never modified
-	allRecipients := make([]string, 0, len(mm.To)+len(mm.Cc))
+	// Copy into a new slice so the caller's backing arrays are never modified.
+	// Bcc only goes into the SMTP envelope, never into the message headers.
+	allRecipients := make([]string, 0, len(mm.To)+len(mm.Cc)+len(mm.Bcc))
 	allRecipients = append(allRecipients, mm.To...)
 	allRecipients = append(allRecipients, mm.Cc...)
+	allRecipients = append(allRecipients, mm.Bcc...)
 
 	// Set up authentication if a password is provided
 	var auth smtp.Auth

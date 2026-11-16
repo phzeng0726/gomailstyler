@@ -186,6 +186,36 @@ func (s *HeaderSuite) TestBuildHeaders_FullOrder() {
 	}, headerNames(headers))
 }
 
+// --- buildHeaders: Bcc and empty To ---
+
+func (s *HeaderSuite) TestBuildHeaders_BccNeverWritten() {
+	mm := s.baseMail()
+	mm.Bcc = []string{"secret@example.com"}
+
+	headers, err := s.m.buildHeaders(mm, "BOUNDARY")
+
+	s.Require().NoError(err)
+	s.Equal([]string{"From", "To", "Subject", "Date", "MIME-Version", "Content-Type"}, headerNames(headers))
+	for _, h := range headers {
+		s.NotContains(h.value, "secret@example.com", "Bcc address leaked into %s", h.name)
+	}
+}
+
+func (s *HeaderSuite) TestBuildHeaders_EmptyToOmitted() {
+	mm := MailMessage{Subject: "Notice", Message: "<p>x</p>", Bcc: []string{"x@example.com"}}
+
+	headers, err := s.m.buildHeaders(mm, "BOUNDARY")
+
+	s.Require().NoError(err)
+	s.Equal([]headerField{
+		{"From", testSender},
+		{"Subject", "Notice"},
+		{"Date", testDate},
+		{"MIME-Version", "1.0"},
+		{"Content-Type", "multipart/mixed; boundary=BOUNDARY"},
+	}, headers)
+}
+
 // --- buildHeaders: threading ---
 
 func (s *HeaderSuite) TestBuildHeaders_InReplyToDefaultsReferences() {
@@ -341,6 +371,7 @@ func (s *HeaderSuite) TestBuildHeaders_FieldValidation() {
 		{"Subject CR only", func(mm *MailMessage) { mm.Subject = "a\rb" }, "invalid header: Subject contains CR or LF"},
 		{"To", func(mm *MailMessage) { mm.To = []string{"a@example.com", "b@example.com\nBcc: x"} }, "invalid header: To[1] contains CR or LF"},
 		{"Cc", func(mm *MailMessage) { mm.Cc = []string{"c@example.com\r\n"} }, "invalid header: Cc[0] contains CR or LF"},
+		{"Bcc", func(mm *MailMessage) { mm.Bcc = []string{"x@example.com", "y@example.com\r\nX-Evil: 1"} }, "invalid header: Bcc[1] contains CR or LF"},
 		{"attachment name CRLF", func(mm *MailMessage) {
 			mm.Attachments = []Attachment{{FileName: "a\r\n.txt"}}
 		}, "invalid header: Attachments[0].FileName contains CR or LF"},
