@@ -19,11 +19,11 @@
 
 #### Scenario: 精確斷言原則規定 MIME 與 HTML 的比對方式
 - **WHEN** 閱讀精確斷言章節
-- **THEN** 規範要求 MIME 訊息以 `net/mail` + `mime/multipart` 解析後逐欄位比對，HTML 輸出以 goquery 解析後比對特定元素的屬性值，不得以 `Contains` 作為唯一斷言
+- **THEN** 規範要求 MIME 訊息以 `net/mail` + `mime/multipart` 解析後逐欄位比對，HTML 輸出以 goquery 解析後比對特定元素的屬性值，不得以 `Contains` 作為唯一斷言；header 順序固定後，也允許以精確字串比對整段 header 區塊（boundary 與 Date 以測試注入的值固定）
 
 #### Scenario: 錯誤身份驗證原則對應本專案的錯誤型態
 - **WHEN** 閱讀錯誤身份驗證章節
-- **THEN** 規範說明：被 `%w` 包裝的底層錯誤以 `errors.Is`（如 `fs.ErrNotExist`）驗證；有型別的錯誤以 `errors.AsType`（如 `*template.ExecError`）驗證；本專案以 `errors.New` 產生、無 sentinel 的錯誤以完整錯誤字串精確比對；不得僅用 `s.Error(err)`
+- **THEN** 規範說明：本專案匯出的 sentinel error（`ErrInvalidHeader`、`ErrReservedHeader`、`ErrInvalidMessageID`）以 `errors.Is` 驗證並搭配完整錯誤字串比對；被 `%w` 包裝的底層錯誤以 `errors.Is`（如 `fs.ErrNotExist`）驗證；有型別的錯誤以 `errors.AsType`（如 `*template.ExecError`）驗證；其餘以 `errors.New` 產生、無 sentinel 的錯誤以完整錯誤字串精確比對；不得僅用 `s.Error(err)`
 
 ### Requirement: 規範定義各元件的斷言深度
 規範 SHALL 以表格列出 Manager（設定/Options）、MIME 組裝、SMTP 寄送、Template 渲染、CSS inline 各元件的最低斷言要求。

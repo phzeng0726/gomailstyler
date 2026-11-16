@@ -23,7 +23,7 @@
 
 #### Scenario: 最小訊息
 - **WHEN** MailMessage 只有 Subject、Message、單一 To
-- **THEN** header 中 `MIME-Version` 為 `1.0`、`To`、`Subject` 精確等於輸入、`Content-Type` 為 `multipart/mixed` 且 boundary 可解析、不存在 `Cc` header；multipart 只有一個 part，其 `Content-Type` 為 `text/html; charset="UTF-8"`，內容等於 Message
+- **THEN** header 依序精確為 `From`、`To`、`Subject`、`Date`、`MIME-Version`、`Content-Type`，其中 `From` 等於 smtpSender、`Date` 等於測試注入的時間、`MIME-Version` 為 `1.0`、`Content-Type` 為 `multipart/mixed` 且 boundary 可解析；不存在 `Cc`、`Message-ID`、`In-Reply-To`、`References` header；multipart 只有一個 part，其 header 為 `Content-Type: text/html; charset="UTF-8"` 與 `Content-Transfer-Encoding: quoted-printable`，解碼後內容等於 Message
 
 #### Scenario: 多位收件者與 Cc
 - **WHEN** To 與 Cc 各有兩個地址
@@ -38,8 +38,12 @@
 - **THEN** 原始 part 內容除最後一行外每行長度精確為 76，最後一行長度為剩餘字元數
 
 #### Scenario: 記錄既有缺陷
-- **WHEN** Subject 含 CR/LF 或非 ASCII 字元
-- **THEN** 測試記錄目前的實際輸出（未過濾、未編碼），並以註解標示為已知缺陷，待後續變更修正
+- **WHEN** Subject 含 CR/LF 或非 ASCII 字元（原 `KNOWN ISSUE` 情境，已於 add-reply-threading-headers 修正）
+- **THEN** 測試作為回歸測試驗證修正後的行為：含 CR/LF 時回傳 `ErrInvalidHeader` 且不產生訊息；非 ASCII 時以 RFC 2047 編碼、解碼後等於原主旨；測試中不再有 `KNOWN ISSUE` 註解
+
+#### Scenario: 完整 threading 訊息
+- **WHEN** MailMessage 設定 MessageID、InReplyTo、References、Cc 與兩個自訂 Headers
+- **THEN** 整段 header 區塊（固定 boundary 與 Date 後）精確等於預期字串，順序符合 mail-headers 規定
 
 ### Requirement: SendMail 寄送測試
 測試 SHALL 使用 in-process 假 SMTP server 驗證 `SendMail` 的 SMTP 互動。
@@ -59,6 +63,14 @@
 #### Scenario: SMTP 失敗
 - **WHEN** 假 server 對 RCPT 回應 5xx，或連線位址無人監聽
 - **THEN** `SendMail` 回傳錯誤；5xx 情境以 `errors.AsType[*textproto.Error]` 驗證回應碼
+
+#### Scenario: 不修改呼叫端 To slice
+- **WHEN** 呼叫端的 `To` 有剩餘容量且 `Cc` 非空
+- **THEN** `SendMail` 後呼叫端底層陣列未被改寫
+
+#### Scenario: 驗證失敗不連線
+- **WHEN** MailMessage 驗證失敗
+- **THEN** `SendMail` 回傳對應 sentinel error，假 server 的連線計數為 0
 
 ### Requirement: TemplatesService 渲染測試
 測試 SHALL 覆蓋 `RenderTemplate`、`RenderTemplateWithFuncs`、`RenderHTMLContent`、`RenderHTMLContentWithFuncs` 的成功與錯誤路徑。
